@@ -1,0 +1,16 @@
+# Secrets and local files
+.env
+*.secret
+credentials.json
+
+# Generated/local probe files
+probes/
+
+# OS/editor files
+.DS_Store
+.vscode/
+.idea/
+
+# Python cache
+__pycache__/
+*.pyc
