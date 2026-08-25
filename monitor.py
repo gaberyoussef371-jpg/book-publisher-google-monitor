@@ -159,8 +159,17 @@ def send_telegram(product: str, publisher: str, url: str, field: str, old: Any, 
 
 
 def connect_sheet():
-    raw = os.environ['GOOGLE_SERVICE_ACCOUNT_JSON']
-    info = json.loads(raw)
+    raw = os.environ.get('GOOGLE_SERVICE_ACCOUNT_JSON', '').strip()
+    if not raw:
+        raise RuntimeError('GOOGLE_SERVICE_ACCOUNT_JSON is empty or missing. Add the complete JSON file contents as a GitHub Actions secret with this exact name.')
+    try:
+        info = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError('GOOGLE_SERVICE_ACCOUNT_JSON is not valid JSON. Paste the complete contents of the downloaded .json key file, not the filename, file path, or a Google Cloud URL.') from exc
+    required = ['client_email', 'private_key', 'token_uri']
+    missing = [key for key in required if not info.get(key)]
+    if missing:
+        raise RuntimeError('GOOGLE_SERVICE_ACCOUNT_JSON is missing required fields: ' + ', '.join(missing))
     scopes = ['https://www.googleapis.com/auth/spreadsheets']
     creds = Credentials.from_service_account_info(info, scopes=scopes)
     return gspread.authorize(creds)
