@@ -187,7 +187,14 @@ def ensure_error_sheet(book):
 def main():
     client = connect_sheet()
     book = client.open_by_key(SHEET_ID)
-    sheet = book.worksheet(SHEET_NAME)
+    try:
+        sheet = book.worksheet(SHEET_NAME)
+    except gspread.WorksheetNotFound:
+        worksheets = book.worksheets()
+        if not worksheets:
+            raise RuntimeError(f'No worksheets exist in the spreadsheet. Create a tab named {SHEET_NAME}.')
+        sheet = worksheets[0]
+        print(f'Worksheet {SHEET_NAME!r} was not found; using the first worksheet: {sheet.title!r}')
     values = sheet.get_all_values()
     if not values:
         raise RuntimeError(f'{SHEET_NAME} is empty')
