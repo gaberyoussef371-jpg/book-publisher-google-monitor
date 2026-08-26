@@ -19,6 +19,7 @@ CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '')
 LIMIT = int(os.getenv('MONITOR_LIMIT', '0'))
 REQUEST_TIMEOUT = 30
 SLEEP_SECONDS = 0.25
+SHEET_WRITE_BATCH_SIZE = 50
 HEADERS = ['Product Name', 'Product URL', 'Price Before', 'Price After', 'Stock', 'Publisher']
 
 
@@ -210,6 +211,19 @@ def connect_sheet():
     return gspread.authorize(creds)
 
 
+def write_row_slice_(sheet, rows, start_index: int, end_index: int, column_count: int):
+    if end_index <= start_index:
+        return
+    end_column = column_letter(column_count)
+    first_sheet_row = start_index + 2
+    last_sheet_row = end_index + 1
+    sheet.batch_update([{
+        'range': f'A{first_sheet_row}:{end_column}{last_sheet_row}',
+        'values': rows[start_index:end_index]
+    }], raw=False)
+    print(f'Updated Sheet rows {first_sheet_row}-{last_sheet_row}')
+
+
 def column_letter(number: int) -> str:
     result = ''
     while number:
@@ -272,6 +286,7 @@ def main():
     error_rows = []
     checked = 0
     errors = 0
+    flushed_to = 0
     rows = values[1:]
     if LIMIT:
         rows = rows[:LIMIT]
@@ -318,13 +333,13 @@ def main():
             print(f'Row {offset} monitor error: {type(exc).__name__}: {exc}')
             error_rows.append([datetime.now(timezone.utc).isoformat(), offset, row[ix['name']], url, str(exc)])
         time.sleep(SLEEP_SECONDS)
+        current_end = offset - 1
+        if current_end - flushed_to >= SHEET_WRITE_BATCH_SIZE:
+            write_row_slice_(sheet, rows, flushed_to, current_end, len(headers))
+            flushed_to = current_end
 
-    if rows:
-        end_column = column_letter(len(headers))
-        sheet.batch_update([{
-            'range': f'A2:{end_column}{len(rows) + 1}',
-            'values': rows
-        }], raw=False)
+    if flushed_to < len(rows):
+        write_row_slice_(sheet, rows, flushed_to, len(rows), len(headers))
     if error_rows:
         error_tab = ensure_error_sheet(book)
         error_tab.append_rows(error_rows, value_input_option='USER_ENTERED')
