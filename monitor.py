@@ -76,24 +76,36 @@ def first_number(soup: BeautifulSoup, text: str, selectors: list[str], labels: l
 def parse_product(response: requests.Response) -> dict:
     soup = BeautifulSoup(response.text, 'html.parser')
     text = re.sub(r'\s+', ' ', soup.get_text(' ', strip=True))
+    raw_html = response.text
     json_ld = parse_json_ld(soup)
     before = None
     after = None
-    egp_marked = bool(re.search(r'\bEGP\b|ج\.م|جنيه|جنية|جنيه مصري|Egyptian Pound|LE\b', text, re.I))
+    egp_marked = bool(re.search(r'\bEGP\b|ج\.م|جنيه|جنية|جنيه مصري|Egyptian Pound|LE\b', raw_html, re.I))
+    egp_json_prices = []
 
     for item in json_ld:
         if item.get('@type') != 'Product':
             continue
         offers = item.get('offers')
-        if isinstance(offers, list):
-            offers = offers[0] if offers else {}
-        if isinstance(offers, dict):
-            currency = str(offers.get('priceCurrency') or '').upper()
-            if currency in ('EGP', 'ج.م'):
+        offer_list = offers if isinstance(offers, list) else [offers] if isinstance(offers, dict) else []
+        for offer in offer_list:
+            specifications = offer.get('priceSpecification') if isinstance(offer, dict) else None
+            specifications = specifications if isinstance(specifications, list) else [specifications] if isinstance(specifications, dict) else []
+            for spec in specifications:
+                if str(spec.get('priceCurrency') or '').upper() in ('EGP', 'ج.م') and number(spec.get('price')) is not None:
+                    egp_marked = True
+                    egp_json_prices.append(number(spec.get('price')))
+            if isinstance(offer, dict) and str(offer.get('priceCurrency') or '').upper() in ('EGP', 'ج.م'):
                 egp_marked = True
-                after = number(offers.get('price') or offers.get('lowPrice')) or after
+                value = number(offer.get('price') or offer.get('lowPrice'))
+                if value is not None:
+                    egp_json_prices.append(value)
 
-    if egp_marked:
+    if egp_json_prices:
+        # Prefer explicit priceSpecification values over converted/display fallback values.
+        after = egp_json_prices[0]
+
+    if egp_marked and not egp_json_prices:
         after = first_number(soup, text, [
             '.sale-price', '.price-final', '.special-price', '.current-price',
             '.woocommerce-Price-amount', '[itemprop="price"]', 'ins .amount', 'ins'
