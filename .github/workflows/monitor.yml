@@ -18,7 +18,7 @@ jobs:
       contents: read
     env:
       GOOGLE_SHEET_ID: '110ZPf1PpYtMO_MMYqF6tD3A-jgbgPacbPOlQax7yatk'
-      SHEET_NAME: 'Products'
+      SHEET_NAME: 'Products_combined'
       ERROR_SHEET_NAME: 'Monitor Errors'
       GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
