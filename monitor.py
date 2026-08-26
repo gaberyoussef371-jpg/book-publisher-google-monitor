@@ -17,6 +17,7 @@ ERROR_SHEET_NAME = os.getenv('ERROR_SHEET_NAME', 'Monitor Errors')
 BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
 CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '')
 LIMIT = int(os.getenv('MONITOR_LIMIT', '0'))
+PUBLISHER_FILTER = os.getenv('PUBLISHER_FILTER', 'all').strip().lower()
 REQUEST_TIMEOUT = 30
 SLEEP_SECONDS = 0.25
 SHEET_WRITE_BATCH_SIZE = 50
@@ -324,6 +325,13 @@ def main():
     for offset, row in enumerate(rows, start=2):
         row += [''] * (len(headers) - len(row))
         url = str(row[ix['url']]).strip()
+        publisher = str(row[ix['publisher']]).strip()
+        if PUBLISHER_FILTER not in ('', 'all'):
+            haystack = f'{publisher} {url}'.lower()
+            if PUBLISHER_FILTER in ('karma', 'alkarma') and 'alkarmabooks.com' not in haystack:
+                continue
+            if PUBLISHER_FILTER in ('beit', 'beit alkotob', 'bookhome') and 'thebookhome.com' not in haystack:
+                continue
         if not url:
             continue
         try:

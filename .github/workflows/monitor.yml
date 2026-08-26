@@ -6,9 +6,18 @@ on:
   workflow_dispatch:
     inputs:
       limit:
-        description: 'Optional number of rows to test; leave blank for all products'
+        description: 'Optional number of rows to test; leave blank for all matching products'
         required: false
         default: ''
+      publisher:
+        description: 'Optional publisher filter for targeted testing'
+        required: false
+        type: choice
+        options:
+          - all
+          - karma
+          - beit
+        default: all
 
 jobs:
   monitor:
@@ -24,6 +33,7 @@ jobs:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       MONITOR_LIMIT: ${{ github.event.inputs.limit || '0' }}
+      PUBLISHER_FILTER: ${{ github.event.inputs.publisher || 'all' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
