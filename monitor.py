@@ -106,13 +106,23 @@ def parse_product(response: requests.Response) -> dict:
         after = egp_json_prices[0]
 
     if egp_marked and not egp_json_prices:
-        after = first_number(soup, text, [
-            '.sale-price', '.price-final', '.special-price', '.current-price',
-            '.woocommerce-Price-amount', '[itemprop="price"]', 'ins .amount', 'ins'
-        ], ['السعر بعد الخصم', 'السعر الحالي', 'sale price', 'current price']) or after
-        before = first_number(soup, text, [
-            '.regular-price', '.old-price', '.price-before', 'del .amount', 'del'
-        ], ['السعر قبل الخصم', 'السعر الأصلي', 'regular price', 'old price'])
+        egp_pattern = re.compile(r'\bEGP\b|ج\.م|جنيه|جنية|جنيه مصري|Egyptian Pound|LE\b', re.I)
+        for selector in ['.sale-price', '.price-final', '.special-price', '.current-price', '[itemprop="price"]', 'ins .amount', 'ins']:
+            node = soup.select_one(selector)
+            node_text = node.get_text(' ', strip=True) if node else ''
+            if node_text and egp_pattern.search(node_text):
+                after = number(node_text)
+                if after is not None:
+                    break
+        for selector in ['.regular-price', '.old-price', '.price-before', 'del .amount', 'del']:
+            node = soup.select_one(selector)
+            node_text = node.get_text(' ', strip=True) if node else ''
+            if node_text and egp_pattern.search(node_text):
+                before = number(node_text)
+                if before is not None:
+                    break
+        # Do not fall back to generic .woocommerce-Price-amount nodes: on
+        # multi-currency pages they often contain USD conversion values.
 
     if before is None and after is not None:
         before = after
