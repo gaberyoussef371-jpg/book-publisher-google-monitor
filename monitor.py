@@ -275,11 +275,20 @@ def main():
             if live['stock']:
                 sheet.update_cell(offset, ix['stock'] + 1, live['stock'])
 
-            if changes:
-                send_telegram(str(row[ix['name']]), str(row[ix['publisher']]), url, changes)
             checked += 1
+            if changes:
+                try:
+                    send_telegram(str(row[ix['name']]), str(row[ix['publisher']]), url, changes)
+                except Exception as telegram_exc:
+                    # Sheet synchronization remains successful even if Telegram fails.
+                    errors += 1
+                    print(f'Row {offset} Telegram error: {type(telegram_exc).__name__}: {telegram_exc}')
+                    if error_tab is None:
+                        error_tab = ensure_error_sheet(book)
+                    error_tab.append_row([datetime.now(timezone.utc).isoformat(), offset, row[ix['name']], url, 'Telegram: ' + str(telegram_exc)])
         except Exception as exc:
             errors += 1
+            print(f'Row {offset} monitor error: {type(exc).__name__}: {exc}')
             if error_tab is None:
                 error_tab = ensure_error_sheet(book)
             error_tab.append_row([datetime.now(timezone.utc).isoformat(), offset, row[ix['name']], url, str(exc)])
