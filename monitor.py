@@ -107,7 +107,7 @@ def parse_product(response: requests.Response) -> dict:
             # a converted display value even when mislabeled as EGP. Only an
             # explicit EGP priceSpecification is accepted as authoritative.
 
-    if 'thebookhome.com' in str(response.url):
+    if 'thebookhome.com' in str(getattr(response, 'url', '')):
         # بيت الكتب exposes native EGP values in the main product block after
         # the session currency is set: .priceBefore and .currentPrice.
         price_box = soup.select_one('.single-product-price')
@@ -242,17 +242,16 @@ def connect_sheet():
     return gspread.authorize(creds)
 
 
-def write_row_slice_(sheet, rows, start_index: int, end_index: int, column_count: int):
+def write_row_slice_(sheet, selected_rows, start_index: int, end_index: int, column_count: int):
     if end_index <= start_index:
         return
     end_column = column_letter(column_count)
-    first_sheet_row = start_index + 2
-    last_sheet_row = end_index + 1
-    sheet.batch_update([{
-        'range': f'A{first_sheet_row}:{end_column}{last_sheet_row}',
-        'values': rows[start_index:end_index]
-    }], raw=False)
-    print(f'Updated Sheet rows {first_sheet_row}-{last_sheet_row}')
+    updates = [{
+        'range': f'A{sheet_row}:{end_column}{sheet_row}',
+        'values': [row]
+    } for sheet_row, row in selected_rows[start_index:end_index]]
+    sheet.batch_update(updates, raw=False)
+    print(f'Updated {len(updates)} selected Sheet rows ({selected_rows[start_index][0]}-{selected_rows[end_index - 1][0]})')
 
 
 def column_letter(number: int) -> str:
@@ -318,22 +317,26 @@ def main():
     checked = 0
     errors = 0
     flushed_to = 0
-    rows = values[1:]
-    if LIMIT:
-        rows = rows[:LIMIT]
-
-    for offset, row in enumerate(rows, start=2):
+    selected_rows = []
+    for offset, row in enumerate(values[1:], start=2):
         row += [''] * (len(headers) - len(row))
         url = str(row[ix['url']]).strip()
         publisher = str(row[ix['publisher']]).strip()
+        if not url:
+            continue
         if PUBLISHER_FILTER not in ('', 'all'):
             haystack = f'{publisher} {url}'.lower()
             if PUBLISHER_FILTER in ('karma', 'alkarma') and 'alkarmabooks.com' not in haystack:
                 continue
             if PUBLISHER_FILTER in ('beit', 'beit alkotob', 'bookhome') and 'thebookhome.com' not in haystack:
                 continue
-        if not url:
-            continue
+        selected_rows.append((offset, row))
+    if LIMIT:
+        selected_rows = selected_rows[:LIMIT]
+    print(f'Selected {len(selected_rows)} rows for publisher filter: {PUBLISHER_FILTER or "all"}')
+
+    for selected_index, (offset, row) in enumerate(selected_rows):
+        url = str(row[ix['url']]).strip()
         try:
             live = fetch_product(url)
             old = {'before': number(row[ix['before']]), 'after': number(row[ix['after']]), 'stock': stock_normalize(row[ix['stock']])}
@@ -371,13 +374,13 @@ def main():
             print(f'Row {offset} monitor error: {type(exc).__name__}: {exc}')
             error_rows.append([datetime.now(timezone.utc).isoformat(), offset, row[ix['name']], url, str(exc)])
         time.sleep(SLEEP_SECONDS)
-        current_end = offset - 1
+        current_end = selected_index + 1
         if current_end - flushed_to >= SHEET_WRITE_BATCH_SIZE:
-            write_row_slice_(sheet, rows, flushed_to, current_end, len(headers))
+            write_row_slice_(sheet, selected_rows, flushed_to, current_end, len(headers))
             flushed_to = current_end
 
-    if flushed_to < len(rows):
-        write_row_slice_(sheet, rows, flushed_to, len(rows), len(headers))
+    if flushed_to < len(selected_rows):
+        write_row_slice_(sheet, selected_rows, flushed_to, len(selected_rows), len(headers))
     if error_rows:
         error_tab = ensure_error_sheet(book)
         error_tab.append_rows(error_rows, value_input_option='USER_ENTERED')
