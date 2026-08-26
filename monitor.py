@@ -27,7 +27,13 @@ def number(value: Any):
     if value is None or str(value).strip() == '':
         return None
     s = str(value).translate(str.maketrans('٠١٢٣٤٥٦٧٨٩', '0123456789'))
-    s = re.sub(r'[^0-9.,-]', '', s).replace(',', '')
+    # Extract the first complete numeric token. Stripping all non-numeric
+    # characters would turn the dot in Arabic currency text (ج.م) into a
+    # trailing decimal point, e.g. `486.00 ج.م` -> `486.00.`.
+    match = re.search(r'-?[0-9]+(?:[.,][0-9]+)*', s)
+    if not match:
+        return None
+    s = match.group(0).replace(',', '')
     try:
         return float(s)
     except ValueError:
@@ -100,7 +106,17 @@ def parse_product(response: requests.Response) -> dict:
             # a converted display value even when mislabeled as EGP. Only an
             # explicit EGP priceSpecification is accepted as authoritative.
 
-    if egp_json_prices:
+    if 'thebookhome.com' in str(response.url):
+        # بيت الكتب exposes native EGP values in the main product block after
+        # the session currency is set: .priceBefore and .currentPrice.
+        price_box = soup.select_one('.single-product-price')
+        if price_box and re.search(r'ج\.م|جنيه|EGP', price_box.get_text(' ', strip=True), re.I):
+            before_node = price_box.select_one('.priceBefore')
+            after_node = price_box.select_one('.currentPrice')
+            before = number(before_node.get_text(' ', strip=True)) if before_node else None
+            after = number(after_node.get_text(' ', strip=True)) if after_node else None
+
+    if egp_json_prices and before is None and after is None:
         # Prefer explicit priceSpecification values over converted/display fallback values.
         after = egp_json_prices[0]
 
@@ -155,15 +171,29 @@ def parse_product(response: requests.Response) -> dict:
 
 
 def fetch_product(url: str) -> dict:
-    # دار العين uses WooCommerce Multi-Currency. Without this parameter,
-    # the server response defaults to USD even though the product is priced
-    # in EGP. Request the site’s native EGP representation explicitly.
-    if 'elainpublishinghouse.com' in url and 'wmc-currency=' not in url:
-        url += ('&' if '?' in url else '?') + 'wmc-currency=EGP'
-    response = requests.get(url, headers={
+    request_headers = {
         'User-Agent': 'Mozilla/5.0 (compatible; BookPublisherMonitor/1.0)',
         'Accept-Language': 'ar,en;q=0.8',
-    }, timeout=REQUEST_TIMEOUT, allow_redirects=True)
+    }
+    if 'elainpublishinghouse.com' in url and 'wmc-currency=' not in url:
+        # دار العين uses WooCommerce Multi-Currency. Request native EGP.
+        url += ('&' if '?' in url else '?') + 'wmc-currency=EGP'
+        response = requests.get(url, headers=request_headers, timeout=REQUEST_TIMEOUT, allow_redirects=True)
+    elif 'thebookhome.com' in url:
+        # بيت الكتب stores the selected currency in a session cookie. Currency
+        # value 1 is EGP; value 2 is USD. Establish the EGP session first.
+        session = requests.Session()
+        session.headers.update(request_headers)
+        session.get('https://www.thebookhome.com/', timeout=REQUEST_TIMEOUT)
+        currency_response = session.get(
+            'https://www.thebookhome.com/Home/SetSelectedCurrency',
+            params={'currency': '1'}, timeout=REQUEST_TIMEOUT
+        )
+        if currency_response.status_code >= 400:
+            raise RuntimeError(f'Beit Al Kotob currency setup failed: HTTP {currency_response.status_code}')
+        response = session.get(url, timeout=REQUEST_TIMEOUT, allow_redirects=True)
+    else:
+        response = requests.get(url, headers=request_headers, timeout=REQUEST_TIMEOUT, allow_redirects=True)
     if response.status_code >= 400:
         raise ValueError(f'HTTP {response.status_code}')
     return parse_product(response)
