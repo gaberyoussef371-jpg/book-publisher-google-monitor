@@ -210,6 +210,14 @@ def connect_sheet():
     return gspread.authorize(creds)
 
 
+def column_letter(number: int) -> str:
+    result = ''
+    while number:
+        number, remainder = divmod(number - 1, 26)
+        result = chr(65 + remainder) + result
+    return result
+
+
 def ensure_column(sheet, title: str):
     headers = [str(x).replace('\ufeff', '').strip().lower() for x in sheet.row_values(1)]
     key = title.lower()
@@ -261,6 +269,7 @@ def main():
         'status': col('Monitor Status'), 'checked': col('Last Checked')
     }
     error_tab = None
+    error_rows = []
     checked = 0
     errors = 0
     rows = values[1:]
@@ -285,15 +294,15 @@ def main():
                 changes.append(('Stock', old['stock'], live['stock']))
 
             if live['before'] is not None:
-                sheet.update_cell(offset, ix['before'] + 1, live['before'])
+                row[ix['before']] = live['before']
             if live['after'] is not None:
-                sheet.update_cell(offset, ix['after'] + 1, live['after'])
+                row[ix['after']] = live['after']
             if live['stock']:
-                sheet.update_cell(offset, ix['stock'] + 1, live['stock'])
+                row[ix['stock']] = live['stock']
 
             checked += 1
-            sheet.update_cell(offset, ix['status'] + 1, 'OK')
-            sheet.update_cell(offset, ix['checked'] + 1, datetime.now(timezone.utc).isoformat())
+            row[ix['status']] = 'OK'
+            row[ix['checked']] = datetime.now(timezone.utc).isoformat()
             if changes:
                 try:
                     send_telegram(str(row[ix['name']]), str(row[ix['publisher']]), url, changes)
@@ -301,22 +310,24 @@ def main():
                     # Sheet synchronization remains successful even if Telegram fails.
                     errors += 1
                     print(f'Row {offset} Telegram error: {type(telegram_exc).__name__}: {telegram_exc}')
-                    if error_tab is None:
-                        error_tab = ensure_error_sheet(book)
-                    error_tab.append_row([datetime.now(timezone.utc).isoformat(), offset, row[ix['name']], url, 'Telegram: ' + str(telegram_exc)])
+                    error_rows.append([datetime.now(timezone.utc).isoformat(), offset, row[ix['name']], url, 'Telegram: ' + str(telegram_exc)])
         except Exception as exc:
             errors += 1
-            try:
-                sheet.update_cell(offset, ix['status'] + 1, 'ERROR')
-                sheet.update_cell(offset, ix['checked'] + 1, datetime.now(timezone.utc).isoformat())
-            except Exception:
-                pass
+            row[ix['status']] = 'ERROR'
+            row[ix['checked']] = datetime.now(timezone.utc).isoformat()
             print(f'Row {offset} monitor error: {type(exc).__name__}: {exc}')
-            if error_tab is None:
-                error_tab = ensure_error_sheet(book)
-            error_tab.append_row([datetime.now(timezone.utc).isoformat(), offset, row[ix['name']], url, str(exc)])
+            error_rows.append([datetime.now(timezone.utc).isoformat(), offset, row[ix['name']], url, str(exc)])
         time.sleep(SLEEP_SECONDS)
 
+    if rows:
+        end_column = column_letter(len(headers))
+        sheet.batch_update([{
+            'range': f'A2:{end_column}{len(rows) + 1}',
+            'values': rows
+        }], raw=False)
+    if error_rows:
+        error_tab = ensure_error_sheet(book)
+        error_tab.append_rows(error_rows, value_input_option='USER_ENTERED')
     print(f'Checked successfully: {checked}; errors logged silently: {errors}')
 
 
