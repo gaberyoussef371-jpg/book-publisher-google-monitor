@@ -95,11 +95,9 @@ def parse_product(response: requests.Response) -> dict:
                 if str(spec.get('priceCurrency') or '').upper() in ('EGP', 'ج.م') and number(spec.get('price')) is not None:
                     egp_marked = True
                     egp_json_prices.append(number(spec.get('price')))
-            if isinstance(offer, dict) and str(offer.get('priceCurrency') or '').upper() in ('EGP', 'ج.م'):
-                egp_marked = True
-                value = number(offer.get('price') or offer.get('lowPrice'))
-                if value is not None:
-                    egp_json_prices.append(value)
+            # Do not use offer.price here. On some multi-currency pages it is
+            # a converted display value even when mislabeled as EGP. Only an
+            # explicit EGP priceSpecification is accepted as authoritative.
 
     if egp_json_prices:
         # Prefer explicit priceSpecification values over converted/display fallback values.
