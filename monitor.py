@@ -210,6 +210,16 @@ def connect_sheet():
     return gspread.authorize(creds)
 
 
+def ensure_column(sheet, title: str):
+    headers = [str(x).replace('\ufeff', '').strip().lower() for x in sheet.row_values(1)]
+    key = title.lower()
+    if key in headers:
+        return headers.index(key)
+    new_index = len(headers)
+    sheet.update_cell(1, new_index + 1, title)
+    return new_index
+
+
 def ensure_error_sheet(book):
     try:
         tab = book.worksheet(ERROR_SHEET_NAME)
@@ -234,6 +244,11 @@ def main():
     if not values:
         raise RuntimeError(f'{SHEET_NAME} is empty')
     headers = [str(x).replace('\ufeff', '').strip().lower() for x in values[0]]
+    status_col = ensure_column(sheet, 'Monitor Status')
+    checked_col = ensure_column(sheet, 'Last Checked')
+    if status_col is not None or checked_col is not None:
+        values = sheet.get_all_values()
+        headers = [str(x).replace('\ufeff', '').strip().lower() for x in values[0]]
     def col(*names):
         for name in names:
             if name.lower() in headers:
@@ -242,7 +257,8 @@ def main():
     ix = {
         'name': col('Product Name'), 'url': col('Product URL', 'Product Url'),
         'before': col('Price Before'), 'after': col('Price After'),
-        'stock': col('Stock'), 'publisher': col('Publisher')
+        'stock': col('Stock'), 'publisher': col('Publisher'),
+        'status': col('Monitor Status'), 'checked': col('Last Checked')
     }
     error_tab = None
     checked = 0
@@ -276,6 +292,8 @@ def main():
                 sheet.update_cell(offset, ix['stock'] + 1, live['stock'])
 
             checked += 1
+            sheet.update_cell(offset, ix['status'] + 1, 'OK')
+            sheet.update_cell(offset, ix['checked'] + 1, datetime.now(timezone.utc).isoformat())
             if changes:
                 try:
                     send_telegram(str(row[ix['name']]), str(row[ix['publisher']]), url, changes)
@@ -288,6 +306,11 @@ def main():
                     error_tab.append_row([datetime.now(timezone.utc).isoformat(), offset, row[ix['name']], url, 'Telegram: ' + str(telegram_exc)])
         except Exception as exc:
             errors += 1
+            try:
+                sheet.update_cell(offset, ix['status'] + 1, 'ERROR')
+                sheet.update_cell(offset, ix['checked'] + 1, datetime.now(timezone.utc).isoformat())
+            except Exception:
+                pass
             print(f'Row {offset} monitor error: {type(exc).__name__}: {exc}')
             if error_tab is None:
                 error_tab = ensure_error_sheet(book)
