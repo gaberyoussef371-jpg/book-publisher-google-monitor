@@ -79,6 +79,7 @@ def parse_product(response: requests.Response) -> dict:
     json_ld = parse_json_ld(soup)
     before = None
     after = None
+    egp_marked = bool(re.search(r'\bEGP\b|ج\.م|جنيه|جنية|جنيه مصري|Egyptian Pound|LE\b', text, re.I))
 
     for item in json_ld:
         if item.get('@type') != 'Product':
@@ -87,15 +88,19 @@ def parse_product(response: requests.Response) -> dict:
         if isinstance(offers, list):
             offers = offers[0] if offers else {}
         if isinstance(offers, dict):
-            after = number(offers.get('price') or offers.get('lowPrice')) or after
+            currency = str(offers.get('priceCurrency') or '').upper()
+            if currency in ('EGP', 'ج.م'):
+                egp_marked = True
+                after = number(offers.get('price') or offers.get('lowPrice')) or after
 
-    after = first_number(soup, text, [
-        '.sale-price', '.price-final', '.special-price', '.current-price',
-        '.woocommerce-Price-amount', '[itemprop="price"]', 'ins .amount', 'ins'
-    ], ['السعر بعد الخصم', 'السعر الحالي', 'sale price', 'current price']) or after
-    before = first_number(soup, text, [
-        '.regular-price', '.old-price', '.price-before', 'del .amount', 'del'
-    ], ['السعر قبل الخصم', 'السعر الأصلي', 'regular price', 'old price'])
+    if egp_marked:
+        after = first_number(soup, text, [
+            '.sale-price', '.price-final', '.special-price', '.current-price',
+            '.woocommerce-Price-amount', '[itemprop="price"]', 'ins .amount', 'ins'
+        ], ['السعر بعد الخصم', 'السعر الحالي', 'sale price', 'current price']) or after
+        before = first_number(soup, text, [
+            '.regular-price', '.old-price', '.price-before', 'del .amount', 'del'
+        ], ['السعر قبل الخصم', 'السعر الأصلي', 'regular price', 'old price'])
 
     if before is None and after is not None:
         before = after
@@ -124,7 +129,7 @@ def parse_product(response: requests.Response) -> dict:
         stock = None
 
     if before is None and after is None and stock is None:
-        raise ValueError('Could not detect price or stock markers')
+        raise ValueError('Could not detect EGP price or stock markers')
     return {'before': before, 'after': after, 'stock': stock}
 
 
@@ -138,16 +143,21 @@ def fetch_product(url: str) -> dict:
     return parse_product(response)
 
 
-def send_telegram(product: str, publisher: str, url: str, field: str, old: Any, new: Any):
+def send_telegram(product: str, publisher: str, url: str, changes: list[tuple[str, Any, Any]]):
     if not BOT_TOKEN or not CHAT_ID:
         raise RuntimeError('Telegram secrets are not configured')
+    change_lines = []
+    for field, old, new in changes:
+        change_lines.append(
+            f'الحقل: {field}\n'
+            f'القيمة القديمة: {old if old not in (None, "") else "blank"}\n'
+            f'القيمة الجديدة: {new if new not in (None, "") else "blank"}'
+        )
     message = (
         'تغيير في المنتج\n\n'
         f'الناشر: {publisher}\n'
-        f'الكتاب: {product}\n'
-        f'الحقل: {field}\n'
-        f'القيمة القديمة: {old if old not in (None, "") else "blank"}\n'
-        f'القيمة الجديدة: {new if new not in (None, "") else "blank"}\n'
+        f'الكتاب: {product}\n\n'
+        + '\n\n'.join(change_lines) + '\n\n'
         f'الرابط: {url}'
     )
     result = requests.post(
@@ -240,8 +250,8 @@ def main():
             if live['stock']:
                 sheet.update_cell(offset, ix['stock'] + 1, live['stock'])
 
-            for field, old_value, new_value in changes:
-                send_telegram(str(row[ix['name']]), str(row[ix['publisher']]), url, field, old_value, new_value)
+            if changes:
+                send_telegram(str(row[ix['name']]), str(row[ix['publisher']]), url, changes)
             checked += 1
         except Exception as exc:
             errors += 1
