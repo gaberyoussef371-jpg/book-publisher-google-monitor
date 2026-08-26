@@ -154,6 +154,11 @@ def parse_product(response: requests.Response) -> dict:
 
 
 def fetch_product(url: str) -> dict:
+    # دار العين uses WooCommerce Multi-Currency. Without this parameter,
+    # the server response defaults to USD even though the product is priced
+    # in EGP. Request the site’s native EGP representation explicitly.
+    if 'elainpublishinghouse.com' in url and 'wmc-currency=' not in url:
+        url += ('&' if '?' in url else '?') + 'wmc-currency=EGP'
     response = requests.get(url, headers={
         'User-Agent': 'Mozilla/5.0 (compatible; BookPublisherMonitor/1.0)',
         'Accept-Language': 'ar,en;q=0.8',
