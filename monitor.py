@@ -16,6 +16,7 @@ SHEET_NAME = os.getenv('SHEET_NAME', 'Products')
 ERROR_SHEET_NAME = os.getenv('ERROR_SHEET_NAME', 'Monitor Errors')
 BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
 CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '')
+CHAT_IDS = [value.strip() for value in re.split(r'[,;\\n]+', CHAT_ID) if value.strip()]
 LIMIT = int(os.getenv('MONITOR_LIMIT', '0'))
 PUBLISHER_FILTER = os.getenv('PUBLISHER_FILTER', 'all').strip().lower()
 REQUEST_TIMEOUT = 30
@@ -201,7 +202,7 @@ def fetch_product(url: str) -> dict:
 
 
 def send_telegram(product: str, publisher: str, url: str, changes: list[tuple[str, Any, Any]]):
-    if not BOT_TOKEN or not CHAT_ID:
+    if not BOT_TOKEN or not CHAT_IDS:
         raise RuntimeError('Telegram secrets are not configured')
     change_lines = []
     for field, old, new in changes:
@@ -217,12 +218,19 @@ def send_telegram(product: str, publisher: str, url: str, changes: list[tuple[st
         + '\n\n'.join(change_lines) + '\n\n'
         f'الرابط: {url}'
     )
-    result = requests.post(
-        f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage',
-        data={'chat_id': CHAT_ID, 'text': message, 'disable_web_page_preview': 'false'},
-        timeout=REQUEST_TIMEOUT,
-    )
-    result.raise_for_status()
+    failures = []
+    for chat_id in CHAT_IDS:
+        try:
+            result = requests.post(
+                f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage',
+                data={'chat_id': chat_id, 'text': message, 'disable_web_page_preview': 'false'},
+                timeout=REQUEST_TIMEOUT,
+            )
+            result.raise_for_status()
+        except Exception as exc:
+            failures.append(f'{chat_id}: {exc}')
+    if failures:
+        raise RuntimeError('Telegram delivery failed for one or more chats: ' + '; '.join(failures))
 
 
 def connect_sheet():

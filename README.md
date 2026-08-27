@@ -1,6 +1,6 @@
 # Book Publisher Monitor — GitHub Actions + Google Sheets
 
-This monitor runs entirely from GitHub Actions. It does **not** require Google Apps Script. Every 24 hours, GitHub Actions reads the combined `Products` tab from the connected Google Sheet, fetches each product page, compares `Price Before`, `Price After`, and `Stock`, updates successful values, and sends one Telegram message for every actual field change.
+This monitor runs entirely from GitHub Actions. It does **not** require Google Apps Script. Every 24 hours, GitHub Actions reads the combined `Products_combined` tab from the connected Google Sheet, fetches each product page, compares `Price Before`, `Price After`, and `Stock`, updates successful values, and sends one Telegram message for every actual field change.
 
 ## Repository contents
 
@@ -21,7 +21,7 @@ The workflow is configured for spreadsheet ID:
 110ZPf1PpYtMO_MMYqF6tD3A-jgbgPacbPOlQax7yatk
 ```
 
-Create one tab named `Products` and import `Products_combined.csv`. Keep these headers:
+Use the worksheet tab named `Products_combined` and import `Products_combined.csv`. Keep these headers:
 
 ```text
 Product Name,Product URL,Price Before,Price After,Stock,Publisher
@@ -37,9 +37,11 @@ In the repository, open **Settings → Secrets and variables → Actions → New
 |---|---|
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | The complete contents of the service-account JSON file. |
 | `TELEGRAM_BOT_TOKEN` | Your Telegram bot token. |
-| `TELEGRAM_CHAT_ID` | The destination Telegram chat ID. |
+| `TELEGRAM_CHAT_ID` | One chat ID, or multiple chat IDs separated by commas. |
 
 The spreadsheet ID is already configured in `.github/workflows/monitor.yml`, so it does not need to be stored as a secret.
+
+To send every alert to more than one Telegram chat, enter the chat IDs in the same `TELEGRAM_CHAT_ID` secret separated by commas, for example `-1001234567890,987654321`. The monitor sends the same product alert to each listed chat. Do not put these IDs or any credentials in repository files.
 
 ## Test procedure
 
