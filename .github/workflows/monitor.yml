@@ -21,6 +21,26 @@ on:
 
 jobs:
   monitor:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - row_start: 2
+            row_end: 401
+          - row_start: 402
+            row_end: 801
+          - row_start: 802
+            row_end: 1201
+          - row_start: 1202
+            row_end: 1601
+          - row_start: 1602
+            row_end: 2001
+          - row_start: 2002
+            row_end: 2401
+          - row_start: 2402
+            row_end: 2801
+          - row_start: 2802
+            row_end: 3200
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -34,6 +54,8 @@ jobs:
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       MONITOR_LIMIT: ${{ github.event.inputs.limit || '0' }}
       PUBLISHER_FILTER: ${{ github.event.inputs.publisher || 'all' }}
+      ROW_START: ${{ matrix.row_start }}
+      ROW_END: ${{ matrix.row_end }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4

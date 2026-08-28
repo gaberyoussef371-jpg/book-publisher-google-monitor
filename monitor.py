@@ -19,6 +19,8 @@ CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '')
 CHAT_IDS = [value.strip() for value in re.split(r'[,;\\n]+', CHAT_ID) if value.strip()]
 LIMIT = int(os.getenv('MONITOR_LIMIT', '0'))
 PUBLISHER_FILTER = os.getenv('PUBLISHER_FILTER', 'all').strip().lower()
+ROW_START = int(os.getenv('ROW_START', '2'))
+ROW_END = int(os.getenv('ROW_END', '0'))
 REQUEST_TIMEOUT = 30
 SLEEP_SECONDS = 0.25
 SHEET_WRITE_BATCH_SIZE = 50
@@ -327,6 +329,8 @@ def main():
     flushed_to = 0
     selected_rows = []
     for offset, row in enumerate(values[1:], start=2):
+        if offset < ROW_START or (ROW_END and offset > ROW_END):
+            continue
         row += [''] * (len(headers) - len(row))
         url = str(row[ix['url']]).strip()
         publisher = str(row[ix['publisher']]).strip()
@@ -341,7 +345,7 @@ def main():
         selected_rows.append((offset, row))
     if LIMIT:
         selected_rows = selected_rows[:LIMIT]
-    print(f'Selected {len(selected_rows)} rows for publisher filter: {PUBLISHER_FILTER or "all"}')
+    print(f'Selected {len(selected_rows)} rows for publisher filter: {PUBLISHER_FILTER or "all"} and row range {ROW_START}-{ROW_END or "end"}')
 
     for selected_index, (offset, row) in enumerate(selected_rows):
         url = str(row[ix['url']]).strip()
